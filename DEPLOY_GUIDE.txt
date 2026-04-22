@@ -1,0 +1,171 @@
+═══════════════════════════════════════════════════════════════
+   NANDANI ORGANIC — BACKEND DEPLOYMENT GUIDE
+   Deploy on Railway (Free) in ~15 minutes
+═══════════════════════════════════════════════════════════════
+
+WHAT THIS BACKEND DOES:
+  ✅ Stores ALL users in PostgreSQL database
+  ✅ Stores ALL orders with full details
+  ✅ Supports 1000+ concurrent users
+  ✅ Admin can see ALL orders from ALL users
+  ✅ Status changes visible to all users instantly
+  ✅ No data loss — everything in real database
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 1: CREATE RAILWAY ACCOUNT (FREE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to https://railway.app
+2. Click "Login" → "Login with GitHub"
+3. Create a free GitHub account if needed
+4. Authorize Railway
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 2: UPLOAD CODE TO GITHUB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option A — GitHub Desktop (easy):
+  1. Download GitHub Desktop from desktop.github.com
+  2. File → New Repository → name: "nandani-backend"
+  3. Copy all files from this "nandani-backend" folder into it
+  4. Commit → Publish to GitHub
+
+Option B — Terminal:
+  cd ~/Downloads/nandani-backend
+  git init
+  git add -A
+  git commit -m "Nandani Organic Backend"
+  # Create repo on github.com first, then:
+  git remote add origin https://github.com/YOUR_USERNAME/nandani-backend.git
+  git push -u origin main
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 3: DEPLOY ON RAILWAY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to https://railway.app/dashboard
+2. Click "New Project"
+3. Click "Deploy from GitHub repo"
+4. Select "nandani-backend"
+5. Railway auto-detects Node.js and starts deploying
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 4: ADD POSTGRESQL DATABASE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. In your Railway project → Click "+ New"
+2. Select "Database" → "Add PostgreSQL"
+3. Wait for it to start (~30 seconds)
+4. Click on PostgreSQL service → "Connect" tab
+5. Copy the "DATABASE_URL" value
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 5: SET ENVIRONMENT VARIABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click on your "nandani-backend" service in Railway
+2. Go to "Variables" tab
+3. Add these variables one by one:
+
+  DATABASE_URL    → (paste from Step 4)
+  NODE_ENV        → production
+  ADMIN_SECRET    → nandani2024
+  PORT            → 3000
+
+For Firebase (get from Firebase Console → Project Settings → Service Accounts):
+  4. Click "Generate new private key" → download JSON file
+  5. Open the JSON file → copy ALL content
+  6. Add variable: FIREBASE_SERVICE_ACCOUNT → paste JSON content
+
+4. Click "Deploy" after adding all variables
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 6: RUN DATABASE MIGRATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. In Railway → your backend service → "Settings"
+2. Under "Deploy" → click "New Deployment" OR
+3. Open the Railway CLI:
+   npm install -g @railway/cli
+   railway login
+   railway run node scripts/migrate.js
+
+OR run locally with the DATABASE_URL:
+   DATABASE_URL=postgresql://... node scripts/migrate.js
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 7: GET YOUR API URL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Railway → your backend service → "Settings"
+2. Under "Networking" → "Generate Domain"
+3. You get a URL like:
+   https://nandani-backend-production.up.railway.app
+
+4. Test it: open in browser → you should see:
+   {"app":"Nandani Organic Backend API","status":"running",...}
+
+5. Test health: https://your-url.railway.app/health
+   Should show: {"status":"healthy","db":"connected"}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 8: UPDATE APP WITH YOUR API URL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open: nandani-app/src/utils/api.js
+2. Find line: export const API_BASE_URL = 'https://YOUR_RAILWAY_URL...'
+3. Replace with your actual URL:
+   export const API_BASE_URL = 'https://nandani-backend-production.up.railway.app'
+4. Save and rebuild APK
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ API ENDPOINTS REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AUTH:
+  POST /api/auth/login          → login / register after Firebase OTP
+  POST /api/auth/check-phone    → check if phone exists
+
+USERS (requires Firebase token):
+  GET  /api/users/me            → get my profile + addresses
+  PUT  /api/users/me            → update my name
+  POST /api/users/me/addresses  → save new address
+  GET  /api/users/me/addresses  → get my addresses
+
+ORDERS (requires Firebase token):
+  POST /api/orders              → place new order
+  GET  /api/orders/my           → get MY orders only
+  GET  /api/orders/:id          → get single order
+
+ADMIN (requires x-admin-secret header):
+  GET  /api/orders/admin/all          → ALL orders from ALL users
+  PUT  /api/orders/admin/:id/status   → update order status
+  GET  /api/users/all                 → ALL registered users
+  GET  /api/orders/admin/logs         → admin action history
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ DATABASE TABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+users          → uid, name, phone, email, auth_provider, created_at
+addresses      → id, user_uid, address, label, is_default
+orders         → id, user_uid, status, total, payment, placed_at...
+order_items    → id, order_id, name, qty, unit, price
+admin_logs     → id, action, order_id, old_status, new_status
+
+View your data anytime:
+  Railway → PostgreSQL → "Data" tab → browse tables
+  OR connect with any PostgreSQL client (TablePlus, DBeaver)
+
+Admin password: nandani2024
+═══════════════════════════════════════════════════════════════

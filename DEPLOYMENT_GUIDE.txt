@@ -1,0 +1,234 @@
+═══════════════════════════════════════════════════════════════
+   NANDANI ORGANIC — BACKEND DEPLOYMENT GUIDE
+   Node.js + PostgreSQL on Railway (FREE)
+═══════════════════════════════════════════════════════════════
+
+WHAT THIS BACKEND DOES:
+  ✅ Stores ALL users in PostgreSQL (not on device)
+  ✅ Stores ALL orders in PostgreSQL (visible to admin)
+  ✅ Stores saved addresses per user
+  ✅ Supports 1000+ concurrent users
+  ✅ Admin can see/manage all orders from any device
+  ✅ Users can only see their own orders
+  ✅ Data persists even if user uninstalls app
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 1 — DEPLOY TO RAILWAY (10 minutes, FREE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Create free account at: https://railway.app
+   (Sign up with GitHub — easiest)
+
+2. Install Railway CLI:
+   npm install -g @railway/cli
+
+3. Login:
+   railway login
+
+4. Go to backend folder and deploy:
+   cd ~/Downloads/nandani-backend
+   railway init
+   (name it "nandani-organic-backend")
+   railway up
+
+5. Add PostgreSQL database:
+   → In Railway dashboard → your project → "New Service"
+   → Click "Database" → "Add PostgreSQL"
+   → Railway auto-links it to your app ✅
+
+6. Get your DATABASE_URL:
+   → Click the PostgreSQL service
+   → "Variables" tab
+   → Copy "DATABASE_URL"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 2 — SET ENVIRONMENT VARIABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In Railway dashboard → your app service → "Variables" tab:
+
+  DATABASE_URL     = (auto-set by Railway PostgreSQL)
+  NODE_ENV         = production
+  PORT             = 3000
+  ADMIN_SECRET     = nandani2024
+  ALLOWED_ORIGINS  = *
+
+  FIREBASE_PROJECT_ID  = nandini-organic
+  FIREBASE_CLIENT_EMAIL = (from Firebase service account)
+  FIREBASE_PRIVATE_KEY  = (from Firebase service account)
+
+HOW TO GET FIREBASE SERVICE ACCOUNT KEY:
+  → Firebase Console → Project Settings (gear icon)
+  → "Service accounts" tab
+  → "Generate new private key" → Download JSON
+  → Open the JSON file:
+    - "project_id"    → FIREBASE_PROJECT_ID
+    - "client_email"  → FIREBASE_CLIENT_EMAIL
+    - "private_key"   → FIREBASE_PRIVATE_KEY (copy the ENTIRE value)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 3 — SET UP DATABASE TABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After deploying, run the setup script:
+
+  cd ~/Downloads/nandani-backend
+  npm install
+  cp .env.example .env
+  (Edit .env with your DATABASE_URL)
+  node scripts/setup-db.js
+
+This creates 4 tables:
+  📋 users        — uid, name, phone, email, created_at
+  📍 addresses    — user addresses (max 5 per user)
+  📦 orders       — all order details
+  🛒 order_items  — items in each order
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 4 — GET YOUR BACKEND URL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After Railway deploys:
+  → Your service → "Settings" tab → "Domains"
+  → It looks like: https://nandani-organic-backend.up.railway.app
+
+Test it:
+  curl https://YOUR_URL.up.railway.app/health
+
+Expected response:
+  { "status": "healthy", "db": "connected" }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ STEP 5 — CONNECT APP TO BACKEND
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Open: nandani-app/src/utils/api.js
+
+Change line 8:
+  export const API_BASE_URL = 'https://YOUR_RAILWAY_URL.up.railway.app';
+
+To your real URL:
+  export const API_BASE_URL = 'https://nandani-organic-backend.up.railway.app';
+
+Then rebuild the APK:
+  cd ~/Downloads/nandani-app/android
+  ./gradlew clean && ./gradlew assembleRelease
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ API ENDPOINTS REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ALL USER ENDPOINTS (require Firebase token in Authorization header):
+
+  POST  /api/auth/login          Create or fetch user account
+  GET   /api/auth/me             Get my profile + addresses
+  PUT   /api/auth/profile        Update my name
+
+  GET   /api/addresses           Get my saved addresses
+  POST  /api/addresses           Add new address
+  DELETE/api/addresses/:id       Delete address
+  PUT   /api/addresses/:id/default  Set as default
+
+  POST  /api/orders              Place new order
+  GET   /api/orders/mine         My order history
+  GET   /api/orders/:id          Single order details
+
+ADMIN ENDPOINTS (require X-Admin-Secret: nandani2024 header):
+
+  GET   /api/orders/admin/all          All orders + stats
+  GET   /api/orders/admin/users        All users + order counts
+  PUT   /api/orders/admin/:id/status   Update order status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ DATABASE SCHEMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+users:
+  uid           UUID (primary key)
+  name          text
+  phone         text (unique)
+  email         text (unique)
+  firebase_uid  text (from Firebase Auth)
+  role          text (customer / admin)
+  created_at    timestamp
+  updated_at    timestamp
+
+addresses:
+  id            serial
+  user_uid      → users.uid
+  label         text (Home/Work/Other)
+  full_address  text
+  city          text (panchkula/chandigarh/zirakpur)
+  is_default    boolean
+  created_at    timestamp
+
+orders:
+  id              text (NO + timestamp)
+  user_uid        → users.uid
+  address_text    text
+  city            text
+  delivery_date   text
+  payment_method  upi/card/cod
+  payment_id      text
+  payment_status  pending/paid/failed
+  status          pending/confirmed/out_for_delivery/delivered/cancelled
+  subtotal        integer (₹)
+  delivery_fee    integer (₹)
+  total           integer (₹)
+  placed_at       timestamp
+  delivered_at    timestamp
+  cancelled_at    timestamp
+
+order_items:
+  id          serial
+  order_id    → orders.id
+  name        text
+  quantity    integer
+  unit        text (L / kg)
+  unit_price  integer
+  total_price integer
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ VIEW YOUR DATA (PostgreSQL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1 — Railway Dashboard:
+  → PostgreSQL service → "Data" tab → Browse tables visually
+
+Option 2 — pgAdmin (free desktop app):
+  → Download pgAdmin from pgadmin.org
+  → Connect using DATABASE_URL from Railway
+
+Option 3 — TablePlus (Mac):
+  → Download from tableplus.com
+  → New connection → PostgreSQL → paste DATABASE_URL
+
+Useful SQL queries:
+
+  -- All users
+  SELECT uid, name, phone, email, created_at FROM users ORDER BY created_at DESC;
+
+  -- All orders with user info
+  SELECT o.id, u.name, u.phone, o.total, o.status, o.placed_at
+  FROM orders o JOIN users u ON o.user_uid=u.uid
+  ORDER BY o.placed_at DESC;
+
+  -- Revenue
+  SELECT SUM(total) as revenue FROM orders WHERE status='delivered';
+
+  -- Orders today
+  SELECT * FROM orders WHERE placed_at::date = CURRENT_DATE;
+
+═══════════════════════════════════════════════════════════════
+ COST: Railway free tier = $5 credit/month
+       Enough for ~500 orders/day with PostgreSQL
+       Upgrade to $20/month for production scale
+═══════════════════════════════════════════════════════════════
