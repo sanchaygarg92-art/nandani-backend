@@ -1,9 +1,9 @@
 // src/index.js
 require('dotenv').config();
-const express   = require('express');
-const cors      = require('cors');
-const helmet    = require('helmet');
-const morgan    = require('morgan');
+const express = require('express');
+const cors    = require('cors');
+const helmet  = require('helmet');
+const morgan  = require('morgan');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -15,7 +15,7 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Health Check — MUST respond immediately ───────────────────
+// ── Health Check — always responds immediately ────────────────
 app.get('/', (req, res) => {
   res.json({ app: 'Nandani Organic API', status: 'running', time: new Date().toISOString() });
 });
@@ -24,37 +24,22 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'healthy' });
 });
 
-// ── Lazy-load routes (only after DB connects) ─────────────────
-let routesLoaded = false;
+// ── Mount routes immediately (Express handles DB errors per-request) ──
+app.use('/api/auth',   require('./routes/auth'));
+app.use('/api/users',  require('./routes/users'));
+app.use('/api/orders', require('./routes/orders'));
+console.log('✅ Routes mounted');
 
-async function loadRoutes() {
-  if (routesLoaded) return;
+// ── Warm up DB connection in background ──────────────────────
+(async () => {
   try {
     const { query } = require('./db/pool');
     await query('SELECT 1');
-    app.use('/api/auth',   require('./routes/auth'));
-    app.use('/api/users',  require('./routes/users'));
-    app.use('/api/orders', require('./routes/orders'));
-    routesLoaded = true;
-    console.log('✅ Routes loaded, DB connected');
+    console.log('✅ DB connected');
   } catch (e) {
-    console.error('⚠️  DB not ready yet:', e.message);
+    console.error('⚠️  DB warmup failed (will retry on first request):', e.message);
   }
-}
-
-// Try loading routes
-loadRoutes();
-
-// ── Middleware to ensure routes are loaded ────────────────────
-app.use('/api', async (req, res, next) => {
-  if (!routesLoaded) {
-    await loadRoutes();
-    if (!routesLoaded) {
-      return res.status(503).json({ error: 'Service starting up, please retry in a moment' });
-    }
-  }
-  next();
-});
+})();
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -67,7 +52,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-// ── Start server immediately (don't wait for DB) ──────────────
+// ── Start ─────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🐄 Nandani Organic API on port ${PORT}`);
   console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
