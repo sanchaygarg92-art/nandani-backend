@@ -6,8 +6,7 @@ const { verifyToken } = require('../middleware/auth');
 
 // ── In-memory OTP store ───────────────────────────────────────
 const otpStore = new Map();
-
-const FAST2SMS_KEY = process.env.FAST2SMS_API_KEY || 'o0yNQnU3dh4jCv8wEp9DK7iBYFquMrlGaSRf1Lzk2mg6tcVJHWO9VwhbNF4lf80XJoWaTLGQUygSE7ZB';
+const FAST2SMS_KEY = process.env.FAST2SMS_API_KEY;
 
 // ── POST /auth/send-otp ───────────────────────────────────────
 router.post('/send-otp', async (req, res) => {
@@ -19,19 +18,17 @@ router.post('/send-otp', async (req, res) => {
     return res.status(400).json({ error: 'Invalid phone number. Must be 10 digits.' });
   }
 
-  // Rate limit: max 3 OTPs per phone per 10 minutes
+  // Rate limit: max 3 OTPs per 10 minutes
   const existing = otpStore.get(cleaned);
   if (existing && existing.attempts >= 3 && existing.expiresAt > Date.now()) {
     return res.status(429).json({ error: 'Too many OTP requests. Please wait 10 minutes.' });
   }
 
-  // Generate 6-digit OTP
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otp       = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
   otpStore.set(cleaned, {
-    otp,
-    expiresAt,
+    otp, expiresAt,
     attempts: (existing?.attempts || 0) + 1,
   });
 
@@ -40,34 +37,30 @@ router.post('/send-otp', async (req, res) => {
       method: 'POST',
       headers: {
         'authorization': FAST2SMS_KEY,
-        'Content-Type': 'application/json',
+        'Content-Type':  'application/json',
       },
       body: JSON.stringify({
-        route:            'otp',
-        variables_values: otp,
-        numbers:          cleaned,
+        route:   'q',
+        message: `Your Nandani Organic OTP is ${otp}. Valid for 10 minutes. Do not share with anyone.`,
+        numbers: cleaned,
       }),
     });
 
     const text = await response.text();
-    console.log('Fast2SMS raw response:', text);
+    console.log('Fast2SMS response:', text);
 
     let data;
     try { data = JSON.parse(text); }
-    catch (e) { 
-      console.error('Fast2SMS non-JSON response:', text);
+    catch (e) {
       return res.status(500).json({ error: 'SMS service error. Please try again.' });
     }
 
-    console.log('Fast2SMS parsed:', JSON.stringify(data));
-
     if (!data.return) {
-      // data.message can be array or string — handle both
       const errMsg = Array.isArray(data.message)
         ? data.message.join(', ')
-        : (typeof data.message === 'string' ? data.message : JSON.stringify(data));
+        : (typeof data.message === 'string' ? data.message : 'Failed to send OTP');
       console.error('Fast2SMS failed:', errMsg);
-      return res.status(500).json({ error: errMsg || 'Failed to send OTP' });
+      return res.status(500).json({ error: errMsg });
     }
 
     console.log(`OTP ${otp} sent to ${cleaned}`);
@@ -75,8 +68,8 @@ router.post('/send-otp', async (req, res) => {
     return res.json({ sessionInfo, success: true });
 
   } catch (e) {
-    console.error('Fast2SMS fetch error:', e.message);
-    return res.status(500).json({ error: 'Could not reach SMS service. Please try again.' });
+    console.error('Fast2SMS error:', e.message);
+    return res.status(500).json({ error: 'Could not send OTP. Please try again.' });
   }
 });
 
@@ -88,7 +81,9 @@ router.post('/verify-otp', async (req, res) => {
   const cleaned = phone.replace(/^\+91/, '').replace(/\D/g, '');
   const stored  = otpStore.get(cleaned);
 
-  if (!stored) return res.status(400).json({ error: 'No OTP sent to this number. Please request again.' });
+  if (!stored) {
+    return res.status(400).json({ error: 'No OTP sent to this number. Please request again.' });
+  }
   if (stored.expiresAt < Date.now()) {
     otpStore.delete(cleaned);
     return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
@@ -100,7 +95,7 @@ router.post('/verify-otp', async (req, res) => {
   otpStore.delete(cleaned);
 
   try {
-    const admin = require('../firebase');
+    const admin     = require('../firebase');
     const fullPhone = `+91${cleaned}`;
     let firebaseUser;
 
@@ -114,10 +109,10 @@ router.post('/verify-otp', async (req, res) => {
     console.log(`OTP verified for ${fullPhone}, uid: ${firebaseUser.uid}`);
 
     return res.json({
-      success:     true,
-      uid:         firebaseUser.uid,
+      success: true,
+      uid:     firebaseUser.uid,
       customToken,
-      phone:       fullPhone,
+      phone:   fullPhone,
     });
 
   } catch (e) {
@@ -181,7 +176,6 @@ router.post('/upsert', async (req, res) => {
     const addrs = await query('SELECT * FROM addresses WHERE user_uid = $1', [uid]);
     res.json({ user: { ...result.rows[0], addresses: addrs.rows } });
   } catch (e) {
-    console.error('Upsert error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
