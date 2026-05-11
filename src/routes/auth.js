@@ -3,57 +3,126 @@ const express = require('express');
 const router  = express.Router();
 const { query } = require('../db/pool');
 const { verifyToken } = require('../middleware/auth');
-const admin = require('../firebase');
+const crypto = require('crypto');
+
+// ── In-memory OTP store (simple, works for single instance) ──
+// Format: { phone: { otp, expiresAt, attempts } }
+const otpStore = new Map();
+
+const FAST2SMS_KEY = process.env.FAST2SMS_API_KEY || 'o0yNQnU3dh4jCv8wEp9DK7iBYFquMrlGaSRf1Lzk2mg6tcVJHWO9VwhbNF4lf80XJoWaTLGQUygSE7ZB';
 
 // ── POST /auth/send-otp ───────────────────────────────────────
-// Uses Firebase Admin SDK to send OTP — works for ALL real numbers,
-// no reCAPTCHA needed. Blaze plan required on Firebase project.
+// Generates a 6-digit OTP and sends via Fast2SMS
 router.post('/send-otp', async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'Phone number required' });
 
+  // Clean phone — strip +91 prefix, keep 10 digits
+  const cleaned = phone.replace(/^\+91/, '').replace(/\D/g, '');
+  if (cleaned.length !== 10) {
+    return res.status(400).json({ error: 'Invalid phone number. Must be 10 digits.' });
+  }
+
+  // Rate limit: max 3 OTPs per phone per 10 minutes
+  const existing = otpStore.get(cleaned);
+  if (existing && existing.attempts >= 3 && existing.expiresAt > Date.now()) {
+    return res.status(429).json({ error: 'Too many OTP requests. Please wait 10 minutes.' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  // Store OTP
+  otpStore.set(cleaned, {
+    otp,
+    expiresAt,
+    attempts: (existing?.attempts || 0) + 1,
+    verified: false,
+  });
+
+  // Send via Fast2SMS
   try {
-    // Firebase Admin SDK: generate a sign-in link / session
-    // We use the REST API on behalf of the server using the service account
-    const { GoogleAuth } = require('google-auth-library');
-
-    // Get an access token from the service account
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    const auth = new GoogleAuth({
-      credentials: serviceAccount,
-      scopes: ['https://www.googleapis.com/auth/identitytoolkit'],
+    const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      method: 'POST',
+      headers: {
+        'authorization': FAST2SMS_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        route:     'otp',
+        variables_values: otp,
+        numbers:   cleaned,
+      }),
     });
-    const client = await auth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    const accessToken = tokenResponse.token;
-
-    // Call Firebase Identity Toolkit with server auth (bypasses reCAPTCHA)
-    const response = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${process.env.FIREBASE_API_KEY || 'AIzaSyC1SlAhWTTxH_WZAZ7hYBeqTdFLTq4bixw'}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          phoneNumber: phone,
-          // Server-side call with OAuth2 token bypasses reCAPTCHA requirement
-        }),
-      }
-    );
 
     const data = await response.json();
-    if (data.error) {
-      console.error('Firebase send-otp error:', data.error);
-      return res.status(400).json({ error: data.error.message });
+    console.log('Fast2SMS response:', JSON.stringify(data));
+
+    if (!data.return) {
+      console.error('Fast2SMS error:', data);
+      return res.status(500).json({ error: data.message?.[0] || 'Failed to send OTP' });
     }
 
-    console.log(`OTP sent to ${phone} via Admin SDK`);
-    return res.json({ sessionInfo: data.sessionInfo, success: true });
+    console.log(`OTP ${otp} sent to ${cleaned} via Fast2SMS`);
+    // Return a sessionInfo token so the app can reference this OTP session
+    const sessionInfo = Buffer.from(`${cleaned}:${expiresAt}`).toString('base64');
+    return res.json({ sessionInfo, success: true });
+
   } catch (e) {
-    console.error('send-otp error:', e.message);
-    return res.status(500).json({ error: e.message });
+    console.error('Fast2SMS fetch error:', e.message);
+    return res.status(500).json({ error: 'Could not send OTP. Please try again.' });
+  }
+});
+
+// ── POST /auth/verify-otp ─────────────────────────────────────
+// Verifies the OTP and signs the user in via Firebase Admin
+router.post('/verify-otp', async (req, res) => {
+  const { phone, otp, sessionInfo } = req.body;
+  if (!phone || !otp) return res.status(400).json({ error: 'Phone and OTP required' });
+
+  const cleaned = phone.replace(/^\+91/, '').replace(/\D/g, '');
+  const stored  = otpStore.get(cleaned);
+
+  if (!stored) return res.status(400).json({ error: 'No OTP sent to this number. Please request again.' });
+  if (stored.expiresAt < Date.now()) {
+    otpStore.delete(cleaned);
+    return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
+  }
+  if (stored.otp !== String(otp).trim()) {
+    return res.status(400).json({ error: 'Invalid OTP. Please check and try again.' });
+  }
+
+  // OTP valid — clean up
+  otpStore.delete(cleaned);
+
+  // Create or get Firebase user for this phone
+  try {
+    const admin = require('../firebase');
+    const fullPhone = `+91${cleaned}`;
+    let firebaseUser;
+
+    try {
+      firebaseUser = await admin.auth().getUserByPhoneNumber(fullPhone);
+    } catch (e) {
+      // User doesn't exist — create them
+      firebaseUser = await admin.auth().createUser({ phoneNumber: fullPhone });
+    }
+
+    // Create a custom token for the app to sign in with
+    const customToken = await admin.auth().createCustomToken(firebaseUser.uid);
+
+    console.log(`OTP verified for ${fullPhone}, uid: ${firebaseUser.uid}`);
+    return res.json({
+      success:     true,
+      uid:         firebaseUser.uid,
+      customToken, // App will exchange this for idToken
+      phone:       fullPhone,
+    });
+
+  } catch (e) {
+    console.error('Firebase user creation error:', e.message);
+    return res.status(500).json({ error: 'Authentication failed. Please try again.' });
   }
 });
 
